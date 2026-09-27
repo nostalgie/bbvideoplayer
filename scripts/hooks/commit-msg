@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# commit-msg hook: reject commit messages containing Cyrillic.
+# All commit messages must be English.
+# Enable once per clone: git config core.hooksPath scripts/hooks
+set -euo pipefail
+
+MSG_FILE="${1:?usage: commit-msg <msg-file>}"
+
+if sed '/^#/d' "$MSG_FILE" | grep -qP '[\x{0400}-\x{04FF}]'; then
+  echo "error: commit message contains Cyrillic characters." >&2
+  echo "       Commit messages must be English only." >&2
+  exit 1
+fi

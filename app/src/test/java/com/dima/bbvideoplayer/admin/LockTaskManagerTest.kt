@@ -1,0 +1,238 @@
+/**
+ * Tests for [LockTaskManager] — verifies kiosk-mode logic including
+ * device-owner / admin-active checks, lock-task start/stop,
+ * and device-admin intent creation.
+ *
+ * Uses Mockito to mock DevicePolicyManager and Activity.
+ * Uses Robolectric so that android.util.Log does not throw.
+ */
+package com.dima.bbvideoplayer.admin
+
+import android.app.Activity
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
+import androidx.test.core.app.ApplicationProvider
+import com.google.common.truth.Truth.assertThat
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+import org.robolectric.RobolectricTestRunner
+
+@RunWith(RobolectricTestRunner::class)
+class LockTaskManagerTest {
+
+    private lateinit var mockContext: Context
+    private lateinit var mockDpm: DevicePolicyManager
+    private lateinit var manager: LockTaskManager
+
+    @Before
+    fun setUp() {
+        mockContext = mock()
+        mockDpm = mock()
+        whenever(mockContext.getSystemService(Context.DEVICE_POLICY_SERVICE))
+            .thenReturn(mockDpm)
+        whenever(mockContext.packageName).thenReturn("com.dima.bbvideoplayer")
+        manager = LockTaskManager(mockContext)
+    }
+
+    // --- isDeviceOwner() ---
+
+    @Test
+    fun isDeviceOwner_returnsTrueWhenAppIsDeviceOwner() {
+        whenever(mockDpm.isDeviceOwnerApp("com.dima.bbvideoplayer")).thenReturn(true)
+
+        assertThat(manager.isDeviceOwner()).isTrue()
+    }
+
+    @Test
+    fun isDeviceOwner_returnsFalseWhenAppIsNotDeviceOwner() {
+        whenever(mockDpm.isDeviceOwnerApp("com.dima.bbvideoplayer")).thenReturn(false)
+
+        assertThat(manager.isDeviceOwner()).isFalse()
+    }
+
+    // --- isAdminActive() ---
+
+    @Test
+    fun isAdminActive_returnsTrueWhenAdminIsActive() {
+        whenever(mockDpm.isAdminActive(any())).thenReturn(true)
+
+        assertThat(manager.isAdminActive()).isTrue()
+    }
+
+    @Test
+    fun isAdminActive_returnsFalseWhenAdminIsNotActive() {
+        whenever(mockDpm.isAdminActive(any())).thenReturn(false)
+
+        assertThat(manager.isAdminActive()).isFalse()
+    }
+
+    // --- startKioskMode() ---
+
+    @Test
+    fun startKioskMode_asDeviceOwner_whitelistsPackagesAndStartsLockTask() {
+        val mockActivity = mock<Activity>()
+        whenever(mockDpm.isDeviceOwnerApp("com.dima.bbvideoplayer")).thenReturn(true)
+
+        manager.startKioskMode(mockActivity)
+
+        verify(mockDpm).setLockTaskPackages(any(), any())
+        verify(mockActivity).startLockTask()
+    }
+
+    @Test
+    fun startKioskMode_notDeviceOwner_doesNotWhitelistButStillStartsLockTask() {
+        val mockActivity = mock<Activity>()
+        whenever(mockDpm.isDeviceOwnerApp("com.dima.bbvideoplayer")).thenReturn(false)
+
+        manager.startKioskMode(mockActivity)
+
+        verify(mockDpm, never()).setLockTaskPackages(any(), any())
+        verify(mockActivity).startLockTask()
+    }
+
+    @Test
+    fun startKioskMode_handlesExceptionGracefully() {
+        val mockActivity = mock<Activity>()
+        whenever(mockDpm.isDeviceOwnerApp("com.dima.bbvideoplayer")).thenReturn(true)
+        whenever(mockActivity.startLockTask()).thenThrow(SecurityException("test"))
+
+        // Should not throw — exception is caught internally
+        manager.startKioskMode(mockActivity)
+    }
+
+    // --- stopKioskMode() ---
+
+    @Test
+    fun stopKioskMode_callsStopLockTaskOnActivity() {
+        val mockActivity = mock<Activity>()
+
+        manager.stopKioskMode(mockActivity)
+
+        verify(mockActivity).stopLockTask()
+    }
+
+    @Test
+    fun stopKioskMode_handlesExceptionGracefully() {
+        val mockActivity = mock<Activity>()
+        whenever(mockActivity.stopLockTask()).thenThrow(IllegalStateException("not locked"))
+
+        // Should not throw — exception is caught internally
+        manager.stopKioskMode(mockActivity)
+    }
+
+    // --- getDeviceAdminIntent() ---
+
+    @Test
+    fun getDeviceAdminIntent_containsCorrectAction() {
+        val intent = manager.getDeviceAdminIntent()
+
+        assertThat(intent.action).isEqualTo(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+    }
+
+    @Test
+    fun getDeviceAdminIntent_containsDeviceAdminExtra() {
+        val intent = manager.getDeviceAdminIntent()
+
+        assertThat(intent.hasExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN)).isTrue()
+    }
+
+    @Test
+    fun getDeviceAdminIntent_containsExplanationExtra() {
+        val intent = manager.getDeviceAdminIntent()
+
+        val explanation = intent.getStringExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION)
+        assertThat(explanation).isNotNull()
+        assertThat(explanation).isNotEmpty()
+    }
+
+    @Test
+    fun getDeviceAdminIntent_adminComponentHasCorrectPackageName() {
+        val intent = manager.getDeviceAdminIntent()
+
+        val admin = intent.getParcelableExtra<ComponentName>(
+            DevicePolicyManager.EXTRA_DEVICE_ADMIN
+        )
+        assertThat(admin).isNotNull()
+        assertThat(admin!!.packageName).isEqualTo("com.dima.bbvideoplayer")
+    }
+
+    @Test
+    fun getDeviceAdminIntent_adminComponentHasCorrectClassName() {
+        val intent = manager.getDeviceAdminIntent()
+
+        val admin = intent.getParcelableExtra<ComponentName>(
+            DevicePolicyManager.EXTRA_DEVICE_ADMIN
+        )
+        assertThat(admin).isNotNull()
+        assertThat(admin!!.className).isEqualTo(MyDeviceAdminReceiver::class.java.name)
+    }
+
+    @Test
+    fun isLockTaskRunning_returnsFalseWhenActivityManagerUnavailable() {
+        whenever(mockContext.getSystemService(Context.ACTIVITY_SERVICE)).thenReturn(null)
+        assertThat(manager.isLockTaskRunning()).isFalse()
+    }
+
+    @Test
+    fun isScreenPinningEnabled_readsSecureSetting() {
+        val appContext = ApplicationProvider.getApplicationContext<Context>()
+        val realManager = LockTaskManager(appContext)
+
+        Settings.Secure.putInt(
+            appContext.contentResolver,
+            "lock_to_app_enabled",
+            1
+        )
+        assertThat(realManager.isScreenPinningEnabled()).isTrue()
+
+        Settings.Secure.putInt(
+            appContext.contentResolver,
+            "lock_to_app_enabled",
+            0
+        )
+        assertThat(realManager.isScreenPinningEnabled()).isFalse()
+    }
+
+    @Test
+    fun applyKioskPolicies_asDeviceOwner_appliesStatusBarPolicy() {
+        whenever(mockDpm.isDeviceOwnerApp("com.dima.bbvideoplayer")).thenReturn(true)
+        manager.applyKioskPolicies()
+        verify(mockDpm).setStatusBarDisabled(any(), eq(true))
+    }
+
+    @Test
+    fun applyKioskPolicies_notDeviceOwner_doesNothing() {
+        whenever(mockDpm.isDeviceOwnerApp("com.dima.bbvideoplayer")).thenReturn(false)
+        manager.applyKioskPolicies()
+        // The early-return guard must suppress every real kiosk side effect.
+        verify(mockDpm, never()).setStatusBarDisabled(any(), eq(true))
+        verify(mockDpm, never()).setLockTaskFeatures(any(), any())
+        verify(mockDpm, never()).addPersistentPreferredActivity(any(), any(), any())
+        verify(mockDpm, never()).setKeyguardDisabled(any(), eq(true))
+        verify(mockDpm, never()).setGlobalSetting(any(), any(), any())
+    }
+
+    @Test
+    fun relinquishDeviceOwner_callsDpmWhenOwner() {
+        whenever(mockDpm.isDeviceOwnerApp("com.dima.bbvideoplayer")).thenReturn(true)
+        manager.relinquishDeviceOwner()
+        verify(mockDpm).clearDeviceOwnerApp("com.dima.bbvideoplayer")
+    }
+
+    @Test
+    fun relinquishDeviceOwner_skipsWhenNotOwner() {
+        whenever(mockDpm.isDeviceOwnerApp("com.dima.bbvideoplayer")).thenReturn(false)
+        manager.relinquishDeviceOwner()
+        verify(mockDpm, never()).clearDeviceOwnerApp(any())
+    }
+}
