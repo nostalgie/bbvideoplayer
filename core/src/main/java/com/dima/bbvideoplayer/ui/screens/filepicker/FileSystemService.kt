@@ -56,48 +56,74 @@ data class StorageVolume(
 
 fun listStorageVolumes(context: Context?): List<StorageVolume> {
     val volumes = mutableListOf<StorageVolume>()
+    val seenPaths = mutableSetOf<String>()
+
+    fun addVolume(name: String, path: String, isRemovable: Boolean) {
+        if (path in seenPaths) return
+        val dir = File(path)
+        if (!dir.exists() || !dir.isDirectory || !dir.canRead()) return
+        seenPaths.add(path)
+        volumes.add(StorageVolume(name = name, path = path, isRemovable = isRemovable))
+    }
+
     val isHuawei = context != null && HuaweiStorageHelper.isHuaweiDevice()
 
     if (isHuawei && context != null) {
         for (volume in HuaweiStorageHelper.getAvailableStorageVolumes(context)) {
             if (volume.isAccessible) {
-                volumes.add(
-                    StorageVolume(
-                        name = volume.name,
-                        path = volume.path,
-                        isRemovable = volume.isRemovable
-                    )
-                )
+                addVolume(volume.name, volume.path, volume.isRemovable)
             }
         }
-    } else {
-        val internal = File(INTERNAL_STORAGE_PATH)
-        if (internal.exists() && internal.isDirectory && internal.canRead()) {
-            volumes.add(
-                StorageVolume(
-                    name = "Внутренняя память",
-                    path = internal.absolutePath,
-                    isRemovable = false
-                )
+        return volumes
+    }
+
+    if (context != null) {
+        // The StorageManager reports every mounted volume, including USB OTG
+        // drives on TV boxes whose mount points a manual /storage scan can miss.
+        val storageManager = context.getSystemService(Context.STORAGE_SERVICE)
+            as? android.os.storage.StorageManager
+        for (volume in storageManager?.storageVolumes.orEmpty()) {
+            if (volume.state != android.os.Environment.MEDIA_MOUNTED) continue
+            val dir: File? = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                volume.directory
+            } else {
+                // getPathFile() is hidden on older APIs; reflection keeps the
+                // OTG volume path available on Android 8.x TV boxes.
+                try {
+                    @Suppress("DEPRECATION")
+                    volume.javaClass.getMethod("getPathFile").invoke(volume) as? File
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            if (dir == null) continue
+            val removable = volume.isRemovable
+            addVolume(
+                name = when {
+                    !removable -> "Внутренняя память"
+                    volume.getDescription(context).isNullOrBlank() -> "USB-накопитель"
+                    else -> volume.getDescription(context) ?: "USB-накопитель"
+                },
+                path = dir.absolutePath,
+                isRemovable = removable
             )
         }
+    }
 
-        val storageDir = File(STORAGE_ROOT)
-        val subDirs = storageDir.listFiles()
-        if (subDirs != null) {
-            for (dir in subDirs.sortedBy { it.name }) {
-                val name = dir.name
-                if (name == "emulated" || name == "self") continue
-                if (!dir.isDirectory || name.startsWith(".")) continue
-                if (!dir.canRead()) continue
-                volumes.add(
-                    StorageVolume(
-                        name = "SD-карта",
-                        path = dir.absolutePath,
-                        isRemovable = true
-                    )
-                )
-            }
+    // Fallback for the rare case the StorageManager misses something: a
+    // manual scan of /storage (used before the StorageManager path existed).
+    val internal = File(INTERNAL_STORAGE_PATH)
+    if (internal.exists() && internal.isDirectory && internal.canRead()) {
+        addVolume("Внутренняя память", internal.absolutePath, isRemovable = false)
+    }
+    val subDirs = File(STORAGE_ROOT).listFiles()
+    if (subDirs != null) {
+        for (dir in subDirs.sortedBy { it.name }) {
+            val name = dir.name
+            if (name == "emulated" || name == "self") continue
+            if (!dir.isDirectory || name.startsWith(".")) continue
+            if (!dir.canRead()) continue
+            addVolume("SD-карта", dir.absolutePath, isRemovable = true)
         }
     }
 
