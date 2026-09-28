@@ -74,9 +74,17 @@ object FolderArt {
     /**
      * Returns the cover image file for the folder: custom art if present,
      * else the cached/generated first-video frame; null when nothing works.
-     * Blocking IO + possible frame extraction — call from Dispatchers.IO.
+     * Blocking IO + possible frame extraction — call from a background
+     * dispatcher. [cancelCheck] is polled during frame extraction: when it
+     * throws (e.g. the UI that requested the cover is gone), generation
+     * aborts immediately so it never competes with the video player.
      */
-    fun coverFile(context: Context, folderPath: String, sampleVideoPath: String?): File? {
+    fun coverFile(
+        context: Context,
+        folderPath: String,
+        sampleVideoPath: String?,
+        cancelCheck: () -> Unit = {}
+    ): File? {
         customCoverFile(context, folderPath)?.let { return it }
 
         val thumb = thumbFile(context, folderPath)
@@ -86,7 +94,7 @@ object FolderArt {
         synchronized(lockFor(folderPath)) {
             // Another thread may have produced the thumb while we waited.
             if (thumb.isFile && thumb.length() > 0) return thumb
-            if (!generateThumbnail(sampleVideoPath, context, thumb)) return null
+            if (!generateThumbnail(sampleVideoPath, context, thumb, cancelCheck)) return null
         }
         return if (thumb.isFile && thumb.length() > 0) thumb else null
     }
@@ -94,23 +102,29 @@ object FolderArt {
     private fun thumbFile(context: Context, folderPath: String): File =
         File(thumbsDir(context), "${cacheKey(folderPath)}.jpg")
 
-    internal fun generateThumbnail(videoPath: String, target: File): Boolean = generateThumbnail(videoPath, null, target)
+    internal fun generateThumbnail(videoPath: String, target: File): Boolean =
+        generateThumbnail(videoPath, null, target) {}
 
     private fun generateThumbnail(
         videoPath: String,
         context: Context?,
-        target: File
+        target: File,
+        cancelCheck: () -> Unit
     ): Boolean {
         // The platform retriever handles mp4/mkv (but often grabs a black
         // fade-in frame — so several offsets are tried); libVLC is the
         // fallback for AVI/XVID it cannot decode at all.
-        if (generateThumbnailRetriever(videoPath, target)) return true
+        if (generateThumbnailRetriever(videoPath, target, cancelCheck)) return true
         target.delete()
         if (context == null) return false
-        return generateThumbnailVlc(context.applicationContext, videoPath, target)
+        return generateThumbnailVlc(context.applicationContext, videoPath, target, cancelCheck)
     }
 
-    private fun generateThumbnailRetriever(videoPath: String, target: File): Boolean {
+    private fun generateThumbnailRetriever(
+        videoPath: String,
+        target: File,
+        cancelCheck: () -> Unit
+    ): Boolean {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(videoPath)
@@ -126,6 +140,7 @@ object FolderArt {
 
             var lastFrame: Bitmap? = null
             for (offsetUs in offsetsUs) {
+                cancelCheck()
                 val frame = retriever.getFrameAtTime(
                     offsetUs,
                     MediaMetadataRetriever.OPTION_CLOSEST
@@ -199,7 +214,12 @@ object FolderArt {
      * written becomes the cover. Serialized: parallel VLC instances are heavy.
      */
     @Synchronized
-    private fun generateThumbnailVlc(context: Context, videoPath: String, target: File): Boolean {
+    private fun generateThumbnailVlc(
+        context: Context,
+        videoPath: String,
+        target: File,
+        cancelCheck: () -> Unit
+    ): Boolean {
         var libVLC: org.videolan.libvlc.LibVLC? = null
         var player: org.videolan.libvlc.MediaPlayer? = null
         var media: org.videolan.libvlc.Media? = null
@@ -232,6 +252,7 @@ object FolderArt {
 
             val deadline = System.currentTimeMillis() + SCENE_SNAPSHOT_TIMEOUT_MS
             while (System.currentTimeMillis() < deadline) {
+                cancelCheck()
                 val frameFile = sceneDir.listFiles { f -> f.length() > 0 }
                     ?.minByOrNull { it.name }
                 if (frameFile != null) {

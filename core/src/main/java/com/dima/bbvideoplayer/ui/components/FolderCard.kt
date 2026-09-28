@@ -39,6 +39,7 @@ import com.dima.bbvideoplayer.ui.theme.CardSurfaceRaised
 import com.dima.bbvideoplayer.ui.theme.DashboardBackground
 import com.dima.bbvideoplayer.utils.FolderArt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 private val CardShape = RoundedCornerShape(20.dp)
@@ -72,8 +73,14 @@ fun FolderCard(
         sampleVideoPath
     ) {
         value = withContext(FolderArt.thumbnailDispatcher) {
-            FolderArt.coverFile(context.applicationContext, folderPath, sampleVideoPath)
-                ?.let { file -> BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }
+            FolderArt.coverFile(
+                context.applicationContext,
+                folderPath,
+                sampleVideoPath,
+                // The card left the screen (e.g. a video started): abort frame
+                // extraction at once so it never competes with the player.
+                cancelCheck = { coroutineContext.ensureActive() }
+            )?.let { file -> BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }
         }
     }
 
