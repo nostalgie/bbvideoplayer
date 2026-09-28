@@ -82,6 +82,11 @@ fun TvNavHost(
                 onNavigateToSettings = {
                     navController.navigate(TvRoutes.PARENT_SETTINGS)
                 },
+                onPlayVideo = { index ->
+                    pendingStartVideoIndex = index
+                    videoPlayerManager.play()
+                    navController.popBackStack(TvRoutes.KID_PLAYER, inclusive = false)
+                },
                 // No kiosk on TV: "Выход" simply closes the app.
                 onExit = { activity?.finishAffinity() }
             )

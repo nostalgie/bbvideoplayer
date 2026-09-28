@@ -71,7 +71,7 @@ fun FolderCard(
         folderPath,
         sampleVideoPath
     ) {
-        value = withContext(Dispatchers.IO) {
+        value = withContext(FolderArt.thumbnailDispatcher) {
             FolderArt.coverFile(context.applicationContext, folderPath, sampleVideoPath)
                 ?.let { file -> BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }
         }

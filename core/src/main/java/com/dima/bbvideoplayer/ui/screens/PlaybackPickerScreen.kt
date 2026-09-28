@@ -71,6 +71,19 @@ fun PlaybackPickerScreen(
     val videoListState = rememberLazyListState()
     val allVideos = libraryState.videos
 
+    // Inside a folder, Back (and the header "Назад") walks one folder up;
+    // only at the root does it leave the picker.
+    val goUpOrExit = {
+        val current = browsePath
+        if (current == null) {
+            onBack()
+        } else {
+            val parent = parentBrowsePath(current, watchedFolders)
+            if (parent == null) onBack() else browsePath = parent
+        }
+    }
+    androidx.activity.compose.BackHandler(onBack = goUpOrExit)
+
     LaunchedEffect(watchedFolders, browsePath) {
         if (browsePath != null && !isPathWithinWatchedFolders(browsePath!!, watchedFolders)) {
             browsePath = null
@@ -119,7 +132,7 @@ fun PlaybackPickerScreen(
                         color = Color.White.copy(alpha = 0.5f)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    ParentBackButton(onClick = onBack)
+                    ParentBackButton(onClick = goUpOrExit)
                 }
             )
             Spacer(modifier = Modifier.height(10.dp))

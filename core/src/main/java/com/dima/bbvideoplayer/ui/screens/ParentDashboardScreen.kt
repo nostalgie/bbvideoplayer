@@ -48,6 +48,7 @@ import com.dima.bbvideoplayer.ui.screens.filepicker.listSubdirectories
 import com.dima.bbvideoplayer.ui.theme.CardSurface
 import com.dima.bbvideoplayer.ui.theme.DashboardBackground
 import com.dima.bbvideoplayer.ui.theme.FolderBlue
+import com.dima.bbvideoplayer.ui.theme.GreenPrimary
 import com.dima.bbvideoplayer.ui.theme.RedButton
 import com.dima.bbvideoplayer.utils.FolderArt
 import com.dima.bbvideoplayer.utils.abbreviateFolderPath
@@ -81,6 +82,7 @@ fun ParentDashboardScreen(
     onNavigateToFilePicker: () -> Unit = {},
     onNavigateToPlayback: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onPlayVideo: (Int) -> Unit = {},
     onExit: () -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -88,6 +90,7 @@ fun ParentDashboardScreen(
     val libraryState by videoLibraryService.libraryState.collectAsStateWithLifecycle()
 
     var pendingRemoveFolder by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingPlayPath by rememberSaveable { mutableStateOf<String?>(null) }
     var showUnsupported by rememberSaveable { mutableStateOf(false) }
     var browsePath by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -98,6 +101,41 @@ fun ParentDashboardScreen(
         if (browsePath != null && !isPathWithinWatchedFolders(browsePath!!, watchedFolders)) {
             browsePath = null
         }
+    }
+
+    // Inside a folder, the system Back walks one folder up; at the root it
+    // falls through to the default (leave the dashboard).
+    val goUpInBrowse = {
+        val current = browsePath
+        if (current != null) {
+            browsePath = parentBrowsePath(current, watchedFolders)
+        }
+    }
+    androidx.activity.compose.BackHandler(enabled = browsePath != null, onBack = goUpInBrowse)
+
+    pendingPlayPath?.let { playPath ->
+        AlertDialog(
+            onDismissRequest = { pendingPlayPath = null },
+            title = { Text(text = "Воспроизвести") },
+            text = { Text(text = "Включить это видео?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingPlayPath = null
+                        // Resolve at confirm time: a rescan may have reordered the list.
+                        val index = allVideos.indexOfFirst { it.filePath == playPath }
+                        if (index >= 0) onPlayVideo(index)
+                    }
+                ) {
+                    Text("Да", color = GreenPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingPlayPath = null }) {
+                    Text("Нет")
+                }
+            }
+        )
     }
 
     pendingRemoveFolder?.let { folderPath ->
@@ -189,6 +227,7 @@ fun ParentDashboardScreen(
                     videoListState = videoListState,
                     onBrowsePathChange = { browsePath = it },
                     onRemoveRootFolder = { pendingRemoveFolder = it },
+                    onPlayVideo = { pendingPlayPath = it },
                     modifier = Modifier.fillMaxWidth().weight(1f)
                 )
 
@@ -300,6 +339,7 @@ private fun BrowseListView(
     videoListState: LazyListState,
     onBrowsePathChange: (String?) -> Unit,
     onRemoveRootFolder: (String) -> Unit,
+    onPlayVideo: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val videosByParentPath = remember(allVideos) { buildVideosByParentPath(allVideos) }
@@ -387,7 +427,10 @@ private fun BrowseListView(
                 items = videosHere,
                 key = { it.filePath }
             ) { video ->
-                VideoListItem(fileName = video.fileName)
+                VideoListItem(
+                    fileName = video.fileName,
+                    onClick = { onPlayVideo(video.filePath) }
+                )
             }
 
             if (!loadingSubdirs && subdirectories.isEmpty() && videosHere.isEmpty()) {
@@ -696,14 +739,20 @@ private fun SubfolderRow(
 }
 
 /**
- * Informational row in the management browse view — no play affordance.
+ * Video row in the management browse view: taps offer playback (with the
+ * confirmation dialog), same as the playback picker.
  */
 @Composable
-private fun VideoListItem(fileName: String) {
+private fun VideoListItem(
+    fileName: String,
+    onClick: () -> Unit
+) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = CardSurface,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier
@@ -717,7 +766,7 @@ private fun VideoListItem(fileName: String) {
                 text = fileName,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.85f),
+                color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

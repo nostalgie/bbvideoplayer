@@ -98,6 +98,10 @@ fun AppNavHost(
                 onNavigateToSettings = {
                     navController.navigate(Routes.PARENT_SETTINGS)
                 },
+                onPlayVideo = { index ->
+                    appState.pendingStartVideoIndex = index
+                    navController.popBackStack(Routes.KID_PLAYER, inclusive = false)
+                },
                 onExit = { appState.suspendKiosk() }
             )
         }
