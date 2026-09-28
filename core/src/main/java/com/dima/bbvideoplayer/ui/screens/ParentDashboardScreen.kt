@@ -65,11 +65,16 @@ fun ParentDashboardScreen(
     onBackToKidMode: () -> Unit,
     onNavigateToFilePicker: () -> Unit = {},
     onPlayVideo: (Int) -> Unit = {},
-    onExit: () -> Unit = {}
+    onExit: () -> Unit = {},
+    showPinControls: Boolean = true,
+    showControlsSideSetting: Boolean = true
 ) {
     val coroutineScope = rememberCoroutineScope()
     val watchedFolders by videoRepository.watchedFolders.collectAsStateWithLifecycle(initialValue = emptyList())
     val libraryState by videoLibraryService.libraryState.collectAsStateWithLifecycle()
+    val controlsSide by videoRepository.controlsSide.collectAsStateWithLifecycle(
+        initialValue = VideoRepository.CONTROLS_SIDE_LEFT
+    )
 
     var showClearAllDialog by rememberSaveable { mutableStateOf(false) }
     var showChangePinDialog by rememberSaveable { mutableStateOf(false) }
@@ -192,10 +197,19 @@ fun ParentDashboardScreen(
         )
         Spacer(modifier = Modifier.height(8.dp))
 
+        if (showControlsSideSetting) {
+            ControlsSideSettingRow(
+                current = controlsSide,
+                onSelect = { side -> coroutineScope.launch { videoRepository.saveControlsSide(side) } }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         if (isPortrait) {
             DashboardActionButtons(
                 folderCount = watchedFolders.size,
                 horizontal = true,
+                showPinControls = showPinControls,
                 onBackToKidMode = onBackToKidMode,
                 onAddFolders = onNavigateToFilePicker,
                 onClearAll = { showClearAllDialog = true },
@@ -242,6 +256,7 @@ fun ParentDashboardScreen(
                 DashboardActionButtons(
                     folderCount = watchedFolders.size,
                     horizontal = false,
+                    showPinControls = showPinControls,
                     onBackToKidMode = onBackToKidMode,
                     onAddFolders = onNavigateToFilePicker,
                     onClearAll = { showClearAllDialog = true },
@@ -283,10 +298,64 @@ private fun ScanStatusBar(
     }
 }
 
+/**
+ * Phone-only setting: which screen side the player controls column sits on.
+ * Hidden on the TV edition, where the controls bar is anchored to the bottom.
+ */
+@Composable
+private fun ControlsSideSettingRow(
+    current: String,
+    onSelect: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Расположение кнопок:",
+            fontSize = 13.sp,
+            color = Color.White.copy(alpha = 0.6f)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        SideOptionButton(
+            label = "Слева",
+            value = VideoRepository.CONTROLS_SIDE_LEFT,
+            selected = current == VideoRepository.CONTROLS_SIDE_LEFT,
+            onSelect = onSelect
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        SideOptionButton(
+            label = "Справа",
+            value = VideoRepository.CONTROLS_SIDE_RIGHT,
+            selected = current == VideoRepository.CONTROLS_SIDE_RIGHT,
+            onSelect = onSelect
+        )
+    }
+}
+
+@Composable
+private fun SideOptionButton(
+    label: String,
+    value: String,
+    selected: Boolean,
+    onSelect: (String) -> Unit
+) {
+    BounceButton(
+        text = label,
+        onClick = { onSelect(value) },
+        backgroundColor = if (selected) FolderBlue else CardSurface,
+        width = 88.dp,
+        height = BUTTON_HEIGHT,
+        fontSize = BUTTON_FONT_SIZE
+    )
+}
+
 @Composable
 private fun DashboardActionButtons(
     folderCount: Int,
     horizontal: Boolean,
+    showPinControls: Boolean = true,
     onBackToKidMode: () -> Unit,
     onAddFolders: () -> Unit,
     onClearAll: () -> Unit,
@@ -306,7 +375,9 @@ private fun DashboardActionButtons(
                 fillWidth = true,
                 modifier = Modifier.weight(1f)
             )
-            DashboardActionButton("ПИН", onChangePin, FolderBlue, fillWidth = true, modifier = Modifier.weight(1f))
+            if (showPinControls) {
+                DashboardActionButton("ПИН", onChangePin, FolderBlue, fillWidth = true, modifier = Modifier.weight(1f))
+            }
             DashboardActionButton("Выход", onExit, ExitRed, fillWidth = true, modifier = Modifier.weight(1f))
         }
     } else {
@@ -323,7 +394,9 @@ private fun DashboardActionButtons(
                 if (folderCount > 0) RedButton else Color.Gray,
                 if (folderCount > 0) Color.White else Color.White.copy(alpha = 0.4f)
             )
-            DashboardActionButton("ПИН", onChangePin, FolderBlue)
+            if (showPinControls) {
+                DashboardActionButton("ПИН", onChangePin, FolderBlue)
+            }
             DashboardActionButton("Выход", onExit, ExitRed)
         }
     }

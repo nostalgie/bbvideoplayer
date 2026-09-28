@@ -28,10 +28,15 @@ class VideoRepository(private val context: Context) {
         /** Initial parent PIN used until the parent changes it in the dashboard. */
         const val DEFAULT_PARENT_PIN = "1111"
 
+        /** Stored values for the player controls side setting (phone edition). */
+        const val CONTROLS_SIDE_LEFT = "left"
+        const val CONTROLS_SIDE_RIGHT = "right"
+
         private val WATCHED_FOLDERS_KEY = stringPreferencesKey("watched_folders")
         private val EXPANDED_FOLDERS_KEY = stringPreferencesKey("expanded_folders")
         private val SELECTED_FOLDERS_KEY = stringPreferencesKey("selected_folders")
         private val PARENT_PIN_KEY = stringPreferencesKey("parent_pin")
+        private val CONTROLS_SIDE_KEY = stringPreferencesKey("controls_side")
 
         private val LEGACY_VIDEO_URIS_KEY = stringPreferencesKey("video_uris")
         private val LEGACY_SELECTED_VIDEOS_KEY = stringPreferencesKey("selected_videos")
@@ -114,6 +119,20 @@ class VideoRepository(private val context: Context) {
 
     suspend fun saveParentPin(pin: String) {
         context.videoPrefsDataStore.edit { it[PARENT_PIN_KEY] = pin }
+    }
+
+    /**
+     * Which screen side the phone player controls sit on. Only "right" is
+     * stored; anything absent or unrecognized reads as the default left.
+     */
+    val controlsSide: Flow<String> = context.videoPrefsDataStore.data.map { prefs ->
+        if (prefs[CONTROLS_SIDE_KEY] == CONTROLS_SIDE_RIGHT) CONTROLS_SIDE_RIGHT else CONTROLS_SIDE_LEFT
+    }
+
+    suspend fun saveControlsSide(side: String) {
+        context.videoPrefsDataStore.edit { prefs ->
+            prefs[CONTROLS_SIDE_KEY] = if (side == CONTROLS_SIDE_RIGHT) CONTROLS_SIDE_RIGHT else CONTROLS_SIDE_LEFT
+        }
     }
 
     suspend fun ensureMigrated() {

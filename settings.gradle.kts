@@ -19,3 +19,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "bbvideoplayer"
 include(":app")
+include(":core")
+include(":app-tv")

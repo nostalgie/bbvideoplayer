@@ -148,7 +148,7 @@ fun FilePickerScreen(
                     try {
                         val intent = Intent(
                             Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                            Uri.parse("package:com.dima.bbvideoplayer")
+                            Uri.parse("package:${context.packageName}")
                         )
                         manageStorageLauncher.launch(intent)
                     } catch (e: Exception) {

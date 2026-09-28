@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dima.bbvideoplayer.data.VideoRepository
 import com.dima.bbvideoplayer.ui.components.BounceButton
 import com.dima.bbvideoplayer.ui.components.SeekButton
 import com.dima.bbvideoplayer.ui.theme.BlueButton
@@ -44,6 +45,10 @@ private val SliderBottomPadding = 8.dp
 internal fun playerControlsButtonScale(availableHeightDp: Float): Float =
     min(1f, availableHeightDp / NaturalColumnHeightDp)
 
+/** Stored side value -> overlay alignment; unknown values fall back to the left. */
+internal fun playerControlsAlignment(controlsSide: String): Alignment =
+    if (controlsSide == VideoRepository.CONTROLS_SIDE_RIGHT) Alignment.CenterEnd else Alignment.CenterStart
+
 @Composable
 fun BoxScope.PlayerControlsOverlay(
     visible: Boolean,
@@ -56,7 +61,8 @@ fun BoxScope.PlayerControlsOverlay(
     onNext: () -> Unit,
     onPlayPause: () -> Unit,
     onSeekBackward: (Long) -> Unit,
-    onSeekForward: (Long) -> Unit
+    onSeekForward: (Long) -> Unit,
+    controlsSide: String = VideoRepository.CONTROLS_SIDE_LEFT
 ) {
     val hasMultipleVideos = filteredVideoCount > 1
     val fadeSpec = tween<Float>(500)
@@ -66,7 +72,7 @@ fun BoxScope.PlayerControlsOverlay(
         enter = fadeIn(animationSpec = fadeSpec),
         exit = fadeOut(animationSpec = fadeSpec),
         modifier = Modifier
-            .align(Alignment.CenterStart)
+            .align(playerControlsAlignment(controlsSide))
             .offset(y = -MenuVerticalOffsetUp)
     ) {
         BoxWithConstraints {

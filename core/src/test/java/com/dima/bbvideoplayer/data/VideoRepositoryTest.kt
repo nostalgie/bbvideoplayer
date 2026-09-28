@@ -195,4 +195,34 @@ class VideoRepositoryTest {
         val json = repository.serialize(paths)
         assertThat(repository.deserialize(json)).containsExactlyElementsIn(paths)
     }
+
+    @Test
+    fun controlsSide_defaultsToLeft() {
+        runBlocking {
+            assertThat(repository.controlsSide.first())
+                .isEqualTo(VideoRepository.CONTROLS_SIDE_LEFT)
+        }
+    }
+
+    @Test
+    fun controlsSide_roundTripsRightAndBack() {
+        runBlocking {
+            repository.saveControlsSide(VideoRepository.CONTROLS_SIDE_RIGHT)
+            assertThat(repository.controlsSide.first())
+                .isEqualTo(VideoRepository.CONTROLS_SIDE_RIGHT)
+
+            repository.saveControlsSide(VideoRepository.CONTROLS_SIDE_LEFT)
+            assertThat(repository.controlsSide.first())
+                .isEqualTo(VideoRepository.CONTROLS_SIDE_LEFT)
+        }
+    }
+
+    @Test
+    fun controlsSide_unknownStoredValue_readsAsLeft() {
+        runBlocking {
+            repository.saveControlsSide("nonsense")
+            assertThat(repository.controlsSide.first())
+                .isEqualTo(VideoRepository.CONTROLS_SIDE_LEFT)
+        }
+    }
 }

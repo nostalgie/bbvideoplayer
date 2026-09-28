@@ -2,6 +2,8 @@ package com.dima.bbvideoplayer.ui.components
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -52,6 +54,8 @@ fun BounceButton(
 
     var isPressed by remember { mutableStateOf(false) }
     val combinedScale = rememberKidButtonScale(isPressed)
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
 
     LaunchedEffect(isPressed) {
         if (isPressed) {
@@ -68,9 +72,16 @@ fun BounceButton(
             },
         shape = RoundedCornerShape(20.dp),
         color = backgroundColor,
-        border = BorderStroke(2.dp, textColor.copy(alpha = 0.3f)),
+        border = if (isFocused) {
+            // D-pad focus ring (Android TV): without it the remote user cannot
+            // see which kid-style button is selected.
+            BorderStroke(4.dp, Color.White)
+        } else {
+            BorderStroke(2.dp, textColor.copy(alpha = 0.3f))
+        },
         shadowElevation = 8.dp,
         tonalElevation = 4.dp,
+        interactionSource = interactionSource,
         onClick = {
             // Double-tap guard: while the bounce timer is running the click
             // window is closed, so a double-tap cannot navigate twice.
