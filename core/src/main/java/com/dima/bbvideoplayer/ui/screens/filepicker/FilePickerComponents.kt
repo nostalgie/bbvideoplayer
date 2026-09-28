@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dima.bbvideoplayer.ui.theme.CardSurface
 import com.dima.bbvideoplayer.ui.theme.DashboardBackground
+import com.dima.bbvideoplayer.ui.theme.FolderBlue
 import com.dima.bbvideoplayer.ui.theme.GreenPrimary
 import com.dima.bbvideoplayer.ui.theme.OrangeAccent
 import com.dima.bbvideoplayer.ui.theme.RedButton
@@ -144,7 +145,7 @@ fun StorageVolumeItem(
     onClick: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(16.dp),
         color = CardSurface,
         modifier = Modifier
             .fillMaxWidth()
@@ -156,16 +157,23 @@ fun StorageVolumeItem(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = if (volume.isRemovable) "💾" else "📱",
-                fontSize = 28.sp
-            )
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(FolderBlue.copy(alpha = 0.15f), RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (volume.isRemovable) "💾" else "📱",
+                    fontSize = 26.sp
+                )
+            }
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
                     text = volume.name,
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                     color = Color.White
                 )
                 Text(
@@ -205,7 +213,7 @@ fun FolderItem(
     val hasSelection = selectedCount > 0 || isAlreadyWatched
 
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(14.dp),
         color = if (hasSelection) GreenPrimary.copy(alpha = 0.15f) else CardSurface
     ) {
         Row(
@@ -232,7 +240,14 @@ fun FolderItem(
                     .clickable(onClick = onClick),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = "📁", fontSize = 24.sp)
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(FolderBlue.copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "📁", fontSize = 20.sp)
+                }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -281,7 +296,7 @@ fun VideoFileItem(
     val isSelectable = isSupported != false
 
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(14.dp),
         color = when {
             !isSelectable -> CardSurface.copy(alpha = 0.5f)
             isSelected -> GreenPrimary.copy(alpha = 0.15f)
@@ -309,10 +324,24 @@ fun VideoFileItem(
                 )
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = if (isSupported == false) "⚠️" else "🎬",
-                fontSize = 22.sp
-            )
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        if (isSupported == false) {
+                            OrangeAccent.copy(alpha = 0.15f)
+                        } else {
+                            GreenPrimary.copy(alpha = 0.12f)
+                        },
+                        RoundedCornerShape(10.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (isSupported == false) "⚠️" else "🎬",
+                    fontSize = 20.sp
+                )
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -342,7 +371,9 @@ fun VideoFileItem(
 }
 
 /**
- * Bottom bar with selection summary and action buttons.
+ * Strict bottom bar of the folder picker: status text on the left (single
+ * line, ellipsized), "Отмена" and "Добавить" on the right — same flat dark
+ * button language as the rest of the parent area.
  */
 @Composable
 fun FilePickerBottomBar(
@@ -350,53 +381,65 @@ fun FilePickerBottomBar(
     onConfirm: () -> Unit,
     onCancel: () -> Unit
 ) {
-    Surface(
-        color = CardSurface,
-        tonalElevation = 8.dp
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Divider(color = Color.White.copy(alpha = 0.1f))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (selectedFolderCount > 0) {
-                        "Выбрано папок: $selectedFolderCount"
-                    } else {
-                        "Выберите папки для добавления"
-                    },
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.7f)
-                )
+    Surface(color = CardSurface) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (selectedFolderCount > 0) {
+                    "Выбрано папок: $selectedFolderCount"
+                } else {
+                    "Выберите папки для добавления"
+                },
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.6f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            PickerActionButton(text = "Отмена", onClick = onCancel)
+            PickerActionButton(
+                text = if (selectedFolderCount > 0) "Добавить ($selectedFolderCount)" else "Добавить",
+                onClick = onConfirm,
+                accent = true,
+                enabled = selectedFolderCount > 0
+            )
+        }
+    }
+}
 
-                // Action buttons
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = onCancel,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White.copy(alpha = 0.7f)
-                        )
-                    ) {
-                        Text("Отмена")
-                    }
-                    Button(
-                        onClick = onConfirm,
-                        enabled = selectedFolderCount > 0,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = GreenPrimary,
-                            disabledContainerColor = GreenPrimary.copy(alpha = 0.3f)
-                        )
-                    ) {
-                        Text("Добавить", color = Color.White)
-                    }
-                }
-            }
+/**
+ * Flat strict button used in the picker bottom bar. Neutral dark surface by
+ * default; [accent] turns it blue, disabled state dims the label.
+ */
+@Composable
+fun PickerActionButton(
+    text: String,
+    onClick: () -> Unit,
+    accent: Boolean = false,
+    enabled: Boolean = true
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(10.dp),
+        color = if (accent && enabled) FolderBlue else DashboardBackground,
+        modifier = Modifier.heightIn(min = 40.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Text(
+                text = text,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (enabled) Color.White else Color.White.copy(alpha = 0.35f),
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }

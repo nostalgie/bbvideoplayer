@@ -117,11 +117,21 @@ fun BounceButton(
                     )
                 }
             } else {
+                // Labels longer than the fixed button width shrink to fit on
+                // one line instead of wrapping and clipping vertically.
+                var fittedFontSize by remember(text, fontSize) { mutableStateOf(fontSize) }
                 Text(
                     text = text,
-                    fontSize = fontSize,
+                    fontSize = fittedFontSize,
                     color = textColor,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    onTextLayout = { result ->
+                        if (result.hasVisualOverflow && fittedFontSize.value > 4f) {
+                            fittedFontSize = (fittedFontSize.value * 0.9f).sp
+                        }
+                    }
                 )
             }
         }

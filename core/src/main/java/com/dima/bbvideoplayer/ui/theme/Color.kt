@@ -13,6 +13,7 @@ val BackgroundDark = Color(0xFF121212)
 val SurfaceDark = Color(0xFF1E1E1E)
 val DashboardBackground = Color(0xFF1A1A2E)
 val CardSurface = Color(0xFF2C2C3E)
+val CardSurfaceRaised = Color(0xFF37374F)
 val DialogBackground = Color(0xFF2C2C2C)
 val KeypadBackground = Color(0xFF3C3C3C)
 

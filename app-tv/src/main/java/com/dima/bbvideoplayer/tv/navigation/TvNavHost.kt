@@ -17,6 +17,8 @@ import com.dima.bbvideoplayer.player.VideoPlayerManager
 import com.dima.bbvideoplayer.tv.ui.TvPlayerScreen
 import com.dima.bbvideoplayer.ui.screens.FilePickerScreen
 import com.dima.bbvideoplayer.ui.screens.ParentDashboardScreen
+import com.dima.bbvideoplayer.ui.screens.ParentSettingsScreen
+import com.dima.bbvideoplayer.ui.screens.PlaybackPickerScreen
 
 /**
  * Navigation routes for the TV edition.
@@ -24,6 +26,8 @@ import com.dima.bbvideoplayer.ui.screens.ParentDashboardScreen
 object TvRoutes {
     const val KID_PLAYER = "kid_player"
     const val PARENT_DASHBOARD = "parent_dashboard"
+    const val PARENT_PLAYBACK = "parent_playback"
+    const val PARENT_SETTINGS = "parent_settings"
     const val FILE_PICKER = "file_picker"
 }
 
@@ -72,15 +76,37 @@ fun TvNavHost(
                 onNavigateToFilePicker = {
                     navController.navigate(TvRoutes.FILE_PICKER)
                 },
+                onNavigateToPlayback = {
+                    navController.navigate(TvRoutes.PARENT_PLAYBACK)
+                },
+                onNavigateToSettings = {
+                    navController.navigate(TvRoutes.PARENT_SETTINGS)
+                },
+                // No kiosk on TV: "Выход" simply closes the app.
+                onExit = { activity?.finishAffinity() }
+            )
+        }
+
+        composable(TvRoutes.PARENT_PLAYBACK) {
+            PlaybackPickerScreen(
+                videoRepository = videoRepository,
+                videoLibraryService = videoLibraryService,
+                onBack = { navController.popBackStack() },
                 onPlayVideo = { index ->
                     pendingStartVideoIndex = index
                     videoPlayerManager.play()
                     navController.popBackStack(TvRoutes.KID_PLAYER, inclusive = false)
-                },
-                // No kiosk on TV: "Выход" simply closes the app.
-                onExit = { activity?.finishAffinity() },
-                showPinControls = false,
-                showControlsSideSetting = false
+                }
+            )
+        }
+
+        composable(TvRoutes.PARENT_SETTINGS) {
+            ParentSettingsScreen(
+                videoRepository = videoRepository,
+                onBack = { navController.popBackStack() },
+                // No PIN and no phone-only controls placement on TV.
+                showControlsSideSetting = false,
+                showPinControls = false
             )
         }
 

@@ -1,34 +1,44 @@
 package com.dima.bbvideoplayer.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dima.bbvideoplayer.data.LibraryState
 import com.dima.bbvideoplayer.data.VideoEntry
 import com.dima.bbvideoplayer.data.VideoLibraryService
 import com.dima.bbvideoplayer.data.VideoRepository
-import com.dima.bbvideoplayer.ui.components.BounceButton
+import com.dima.bbvideoplayer.ui.components.FolderCard
+import com.dima.bbvideoplayer.ui.components.ParentScreenHeader
 import com.dima.bbvideoplayer.ui.components.VerticalScrollbar
 import com.dima.bbvideoplayer.ui.screens.dashboard.buildVideosByParentPath
 import com.dima.bbvideoplayer.ui.screens.dashboard.isPathWithinWatchedFolders
@@ -37,10 +47,9 @@ import com.dima.bbvideoplayer.ui.screens.dashboard.videoCountForFolder
 import com.dima.bbvideoplayer.ui.screens.filepicker.listSubdirectories
 import com.dima.bbvideoplayer.ui.theme.CardSurface
 import com.dima.bbvideoplayer.ui.theme.DashboardBackground
-import com.dima.bbvideoplayer.ui.theme.ExitRed
 import com.dima.bbvideoplayer.ui.theme.FolderBlue
-import com.dima.bbvideoplayer.ui.theme.GreenPrimary
 import com.dima.bbvideoplayer.ui.theme.RedButton
+import com.dima.bbvideoplayer.utils.FolderArt
 import com.dima.bbvideoplayer.utils.abbreviateFolderPath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,35 +59,34 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val BUTTON_WIDTH = 88.dp
 private val BUTTON_HEIGHT = 40.dp
-private val BUTTON_FONT_SIZE = 12.sp
 
 private val FOLDER_ROW_ICON_SIZE = 20.sp
 private val FOLDER_ROW_VERTICAL_PADDING = 10.dp
 private val FOLDER_ROW_HORIZONTAL_PADDING = 12.dp
 
+private val GridMinCardWidth = 160.dp
+private val GridSpacing = 10.dp
+
+/**
+ * Library-management surface of the parent area: add/remove folders, folder
+ * covers, scan status. Playing videos happens on [PlaybackPickerScreen],
+ * PIN / controls side / clear-all on [ParentSettingsScreen].
+ */
 @Composable
 fun ParentDashboardScreen(
     videoRepository: VideoRepository,
     videoLibraryService: VideoLibraryService,
     onBackToKidMode: () -> Unit,
     onNavigateToFilePicker: () -> Unit = {},
-    onPlayVideo: (Int) -> Unit = {},
-    onExit: () -> Unit = {},
-    showPinControls: Boolean = true,
-    showControlsSideSetting: Boolean = true
+    onNavigateToPlayback: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
+    onExit: () -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
     val watchedFolders by videoRepository.watchedFolders.collectAsStateWithLifecycle(initialValue = emptyList())
     val libraryState by videoLibraryService.libraryState.collectAsStateWithLifecycle()
-    val controlsSide by videoRepository.controlsSide.collectAsStateWithLifecycle(
-        initialValue = VideoRepository.CONTROLS_SIDE_LEFT
-    )
 
-    var showClearAllDialog by rememberSaveable { mutableStateOf(false) }
-    var showChangePinDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingPlayPath by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingRemoveFolder by rememberSaveable { mutableStateOf<String?>(null) }
     var showUnsupported by rememberSaveable { mutableStateOf(false) }
     var browsePath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -92,44 +100,10 @@ fun ParentDashboardScreen(
         }
     }
 
-    if (showChangePinDialog) {
-        ChangePinDialog(
-            onSave = { newPin ->
-                coroutineScope.launch { videoRepository.saveParentPin(newPin) }
-                showChangePinDialog = false
-            },
-            onDismiss = { showChangePinDialog = false }
-        )
-    }
-
-    if (showClearAllDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearAllDialog = false },
-            title = { Text(text = "Удалить все") },
-            text = { Text(text = "Вы уверены? Все папки будут удалены из библиотеки.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showClearAllDialog = false
-                        browsePath = null
-                        coroutineScope.launch { videoRepository.clearAll() }
-                    }
-                ) {
-                    Text("Да", color = RedButton)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearAllDialog = false }) {
-                    Text("Нет")
-                }
-            }
-        )
-    }
-
     pendingRemoveFolder?.let { folderPath ->
         AlertDialog(
             onDismissRequest = { pendingRemoveFolder = null },
-            title = { Text(text = "Удалить папку") },
+            title = { Text(text = "Убрать папку") },
             text = { Text(text = "Убрать папку из библиотеки?\n$folderPath") },
             confirmButton = {
                 TextButton(
@@ -156,502 +130,484 @@ fun ParentDashboardScreen(
         )
     }
 
-    if (pendingPlayPath != null) {
-        AlertDialog(
-            onDismissRequest = { pendingPlayPath = null },
-            title = { Text(text = "Воспроизвести") },
-            text = { Text(text = "Включить это видео?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val path = pendingPlayPath
-                        pendingPlayPath = null
-                        // Resolve at confirm time: a rescan may have reordered the list.
-                        val index = allVideos.indexOfFirst { it.filePath == path }
-                        if (index >= 0) onPlayVideo(index)
-                    }
-                ) {
-                    Text("Да", color = GreenPrimary)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingPlayPath = null }) {
-                    Text("Нет")
-                }
-            }
-        )
-    }
-
-    BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(DashboardBackground)
             .padding(12.dp)
     ) {
-        val isPortrait = maxHeight > maxWidth
-
         Column(modifier = Modifier.fillMaxSize()) {
-        ScanStatusBar(
-            libraryState = libraryState,
-            onRefresh = { videoLibraryService.scanNow() }
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+            // Header: title on its own line; scan status shares the counters
+            // line so a long title can never push "Обновить" off-screen.
+            ParentScreenHeader(title = "Родительский раздел")
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Папки (${watchedFolders.size}) · Видео (${allVideos.size})",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+                ScanStatusBadge(libraryState = libraryState, onRefresh = { videoLibraryService.scanNow() })
+            }
 
-        if (showControlsSideSetting) {
-            ControlsSideSettingRow(
-                current = controlsSide,
-                onSelect = { side -> coroutineScope.launch { videoRepository.saveControlsSide(side) } }
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        if (isPortrait) {
             DashboardActionButtons(
                 folderCount = watchedFolders.size,
-                horizontal = true,
-                showPinControls = showPinControls,
                 onBackToKidMode = onBackToKidMode,
+                onNavigateToPlayback = onNavigateToPlayback,
                 onAddFolders = onNavigateToFilePicker,
-                onClearAll = { showClearAllDialog = true },
-                onChangePin = { showChangePinDialog = true },
+                onNavigateToSettings = onNavigateToSettings,
                 onExit = onExit,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            DashboardVideoList(
-                watchedFolders = watchedFolders,
-                allVideos = allVideos,
-                browsePath = browsePath,
-                onBrowsePathChange = { browsePath = it },
-                unsupportedFiles = libraryState.unsupportedFiles,
-                inaccessibleFolders = libraryState.inaccessibleFolders,
-                showUnsupported = showUnsupported,
-                onToggleUnsupported = { showUnsupported = !showUnsupported },
-                videoListState = videoListState,
-                onRequestAddFolders = onNavigateToFilePicker,
-                onPlayVideo = { pendingPlayPath = it },
-                onRemoveFolder = { pendingRemoveFolder = it },
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            )
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                DashboardVideoList(
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (inaccessibleFoldersVisible(libraryState, watchedFolders, browsePath)) {
+                Text(
+                    text = "⚠️ Недоступно папок: ${libraryState.inaccessibleFolders.size}",
+                    fontSize = 13.sp,
+                    color = RedButton,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
+
+            when {
+                watchedFolders.isEmpty() -> EmptyLibraryPlaceholder(
+                    onRequestAddFolders = onNavigateToFilePicker,
+                    modifier = Modifier.fillMaxWidth().weight(1f)
+                )
+
+                browsePath != null -> BrowseListView(
+                    browsePath = browsePath!!,
                     watchedFolders = watchedFolders,
                     allVideos = allVideos,
-                    browsePath = browsePath,
-                    onBrowsePathChange = { browsePath = it },
-                    unsupportedFiles = libraryState.unsupportedFiles,
-                    inaccessibleFolders = libraryState.inaccessibleFolders,
+                    libraryState = libraryState,
                     showUnsupported = showUnsupported,
                     onToggleUnsupported = { showUnsupported = !showUnsupported },
                     videoListState = videoListState,
-                    onRequestAddFolders = onNavigateToFilePicker,
-                    onPlayVideo = { pendingPlayPath = it },
-                    onRemoveFolder = { pendingRemoveFolder = it },
-                    modifier = Modifier.weight(1f)
+                    onBrowsePathChange = { browsePath = it },
+                    onRemoveRootFolder = { pendingRemoveFolder = it },
+                    modifier = Modifier.fillMaxWidth().weight(1f)
                 )
-                DashboardActionButtons(
-                    folderCount = watchedFolders.size,
-                    horizontal = false,
-                    showPinControls = showPinControls,
-                    onBackToKidMode = onBackToKidMode,
-                    onAddFolders = onNavigateToFilePicker,
-                    onClearAll = { showClearAllDialog = true },
-                    onChangePin = { showChangePinDialog = true },
-                    onExit = onExit
+
+                else -> FolderGridView(
+                    watchedFolders = watchedFolders,
+                    allVideos = allVideos,
+                    unsupportedFiles = libraryState.unsupportedFiles,
+                    showUnsupported = showUnsupported,
+                    onToggleUnsupported = { showUnsupported = !showUnsupported },
+                    onBrowsePathChange = { browsePath = it },
+                    modifier = Modifier.fillMaxWidth().weight(1f)
                 )
             }
-        }
         }
     }
 }
 
-@Composable
-private fun ScanStatusBar(
-    libraryState: com.dima.bbvideoplayer.data.LibraryState,
-    onRefresh: () -> Unit
-) {
-    val timeText = libraryState.lastScanTime?.let { ts ->
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
-    }
+private fun inaccessibleFoldersVisible(
+    libraryState: LibraryState,
+    watchedFolders: List<String>,
+    browsePath: String?
+): Boolean = browsePath == null && libraryState.inaccessibleFolders.isNotEmpty() && watchedFolders.isNotEmpty()
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+/**
+ * Root level of the library: watched folders as cover-art cards in an
+ * adaptive grid (2 columns on a portrait phone, 3+ on a tablet or TV).
+ */
+@Composable
+private fun FolderGridView(
+    watchedFolders: List<String>,
+    allVideos: List<VideoEntry>,
+    unsupportedFiles: List<String>,
+    showUnsupported: Boolean,
+    onToggleUnsupported: () -> Unit,
+    onBrowsePathChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(GridMinCardWidth),
+        horizontalArrangement = Arrangement.spacedBy(GridSpacing),
+        verticalArrangement = Arrangement.spacedBy(GridSpacing),
+        state = rememberLazyGridState(),
+        modifier = modifier
     ) {
-        Text(
-            text = when {
-                libraryState.isScanning -> "Обновление библиотеки..."
-                timeText != null -> "Обновлено: $timeText"
-                else -> "Библиотека не сканировалась"
-            },
-            fontSize = 13.sp,
-            color = Color.White.copy(alpha = 0.6f)
-        )
-        TextButton(onClick = onRefresh, enabled = !libraryState.isScanning) {
-            Text("Обновить", color = FolderBlue, fontSize = 13.sp)
+        items(
+            items = watchedFolders.sorted(),
+            key = { it }
+        ) { folderPath ->
+            val sampleVideo = allVideos
+                .filter { it.sourceFolder == folderPath }
+                .minByOrNull { it.fileName.lowercase() }
+            FolderCard(
+                title = File(folderPath).name.ifEmpty { folderPath },
+                videoCount = videoCountForFolder(allVideos, folderPath).toString(),
+                folderPath = folderPath,
+                sampleVideoPath = sampleVideo?.filePath,
+                onClick = { onBrowsePathChange(folderPath) }
+            )
+        }
+
+        if (unsupportedFiles.isNotEmpty()) {
+            item(key = "unsupported-toggle", span = { GridItemSpan(maxLineSpan) }) {
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = onToggleUnsupported) {
+                    Text(
+                        text = if (showUnsupported) {
+                            "Скрыть неподдерживаемые (${unsupportedFiles.size})"
+                        } else {
+                            "Неподдерживаемые (${unsupportedFiles.size})"
+                        },
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 13.sp
+                    )
+                }
+            }
+            if (showUnsupported) {
+                items(
+                    items = unsupportedFiles,
+                    key = { it },
+                    span = { GridItemSpan(maxLineSpan) }
+                ) { path ->
+                    Text(
+                        text = "⚠️ ${path.substringAfterLast('/')}",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(start = 16.dp, bottom = 2.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
     }
 }
 
 /**
- * Phone-only setting: which screen side the player controls column sits on.
- * Hidden on the TV edition, where the controls bar is anchored to the bottom.
+ * Inside a watched folder: management view of its contents (subfolders and
+ * videos are informational only — playing happens on the playback screen),
+ * plus the remove-from-library and cover actions for the root folder.
  */
 @Composable
-private fun ControlsSideSettingRow(
-    current: String,
-    onSelect: (String) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "Расположение кнопок:",
-            fontSize = 13.sp,
-            color = Color.White.copy(alpha = 0.6f)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        SideOptionButton(
-            label = "Слева",
-            value = VideoRepository.CONTROLS_SIDE_LEFT,
-            selected = current == VideoRepository.CONTROLS_SIDE_LEFT,
-            onSelect = onSelect
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        SideOptionButton(
-            label = "Справа",
-            value = VideoRepository.CONTROLS_SIDE_RIGHT,
-            selected = current == VideoRepository.CONTROLS_SIDE_RIGHT,
-            onSelect = onSelect
-        )
-    }
-}
-
-@Composable
-private fun SideOptionButton(
-    label: String,
-    value: String,
-    selected: Boolean,
-    onSelect: (String) -> Unit
-) {
-    BounceButton(
-        text = label,
-        onClick = { onSelect(value) },
-        backgroundColor = if (selected) FolderBlue else CardSurface,
-        width = 88.dp,
-        height = BUTTON_HEIGHT,
-        fontSize = BUTTON_FONT_SIZE
-    )
-}
-
-@Composable
-private fun DashboardActionButtons(
-    folderCount: Int,
-    horizontal: Boolean,
-    showPinControls: Boolean = true,
-    onBackToKidMode: () -> Unit,
-    onAddFolders: () -> Unit,
-    onClearAll: () -> Unit,
-    onChangePin: () -> Unit,
-    onExit: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    if (horizontal) {
-        Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            DashboardActionButton("Назад", onBackToKidMode, GreenPrimary, fillWidth = true, modifier = Modifier.weight(1f))
-            DashboardActionButton("Добавить", onAddFolders, FolderBlue, fillWidth = true, modifier = Modifier.weight(1f))
-            DashboardActionButton(
-                "Удалить все",
-                { if (folderCount > 0) onClearAll() },
-                if (folderCount > 0) RedButton else Color.Gray,
-                if (folderCount > 0) Color.White else Color.White.copy(alpha = 0.4f),
-                fillWidth = true,
-                modifier = Modifier.weight(1f)
-            )
-            if (showPinControls) {
-                DashboardActionButton("ПИН", onChangePin, FolderBlue, fillWidth = true, modifier = Modifier.weight(1f))
-            }
-            DashboardActionButton("Выход", onExit, ExitRed, fillWidth = true, modifier = Modifier.weight(1f))
-        }
-    } else {
-        Column(
-            modifier = modifier,
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            DashboardActionButton("Назад", onBackToKidMode, GreenPrimary)
-            DashboardActionButton("Добавить", onAddFolders, FolderBlue)
-            DashboardActionButton(
-                "Удалить все",
-                { if (folderCount > 0) onClearAll() },
-                if (folderCount > 0) RedButton else Color.Gray,
-                if (folderCount > 0) Color.White else Color.White.copy(alpha = 0.4f)
-            )
-            if (showPinControls) {
-                DashboardActionButton("ПИН", onChangePin, FolderBlue)
-            }
-            DashboardActionButton("Выход", onExit, ExitRed)
-        }
-    }
-}
-
-@Composable
-private fun ChangePinDialog(
-    onSave: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var newPin by remember { mutableStateOf("") }
-    val pinValid = newPin.length in 4..6 && newPin.all { it.isDigit() }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = "Сменить ПИН") },
-        text = {
-            Column {
-                Text(text = "Новый ПИН (4-6 цифр). Он понадобится для входа в родительский режим.")
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = newPin,
-                    onValueChange = { value ->
-                        newPin = value.filter { it.isDigit() }.take(6)
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onSave(newPin) },
-                enabled = pinValid
-            ) {
-                Text("Сохранить", color = if (pinValid) GreenPrimary else Color.Gray)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Отмена")
-            }
-        }
-    )
-}
-
-@Composable
-private fun DashboardActionButton(
-    text: String,
-    onClick: () -> Unit,
-    backgroundColor: Color,
-    textColor: Color = Color.White,
-    fillWidth: Boolean = false,
-    modifier: Modifier = Modifier
-) {
-    BounceButton(
-        text = text,
-        onClick = onClick,
-        backgroundColor = backgroundColor,
-        textColor = textColor,
-        width = if (fillWidth) Dp.Unspecified else BUTTON_WIDTH,
-        height = BUTTON_HEIGHT,
-        fontSize = BUTTON_FONT_SIZE,
-        modifier = if (fillWidth) modifier.fillMaxWidth() else modifier
-    )
-}
-
-@Composable
-private fun DashboardVideoList(
+private fun BrowseListView(
+    browsePath: String,
     watchedFolders: List<String>,
     allVideos: List<VideoEntry>,
-    browsePath: String?,
-    onBrowsePathChange: (String?) -> Unit,
-    unsupportedFiles: List<String>,
-    inaccessibleFolders: List<String>,
+    libraryState: LibraryState,
     showUnsupported: Boolean,
     onToggleUnsupported: () -> Unit,
     videoListState: LazyListState,
-    onRequestAddFolders: () -> Unit,
-    onPlayVideo: (String) -> Unit,
-    onRemoveFolder: (String) -> Unit,
+    onBrowsePathChange: (String?) -> Unit,
+    onRemoveRootFolder: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val videosByParentPath = remember(allVideos) { buildVideosByParentPath(allVideos) }
+    val rootFolder = remember(browsePath, watchedFolders) {
+        watchedFolders.find { browsePath == it || browsePath.startsWith("$it/") }
+    }
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val pickCoverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        val folder = rootFolder ?: return@rememberLauncherForActivityResult
+        if (uri != null) {
+            coroutineScope.launch {
+                withContext(Dispatchers.IO) { FolderArt.setCustomCover(context.applicationContext, folder, uri) }
+            }
+        }
+    }
 
     var subdirectories by remember { mutableStateOf<List<String>>(emptyList()) }
     var loadingSubdirs by remember { mutableStateOf(false) }
 
     LaunchedEffect(browsePath) {
-        val path = browsePath ?: run {
-            subdirectories = emptyList()
-            loadingSubdirs = false
-            return@LaunchedEffect
-        }
         loadingSubdirs = true
         subdirectories = emptyList() // stale rows from the previous folder must not show
-        subdirectories = withContext(Dispatchers.IO) { listSubdirectories(path) }
+        subdirectories = withContext(Dispatchers.IO) { listSubdirectories(browsePath) }
         loadingSubdirs = false
     }
 
     Column(modifier = modifier) {
-        if (watchedFolders.isNotEmpty()) {
-            Text(
-                text = "Папки (${watchedFolders.size}), видео (${allVideos.size}):",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.7f)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-        }
+        BrowseBarRow(
+            currentPath = browsePath,
+            rootFolder = rootFolder,
+            onNavigateUp = { onBrowsePathChange(parentBrowsePath(browsePath, watchedFolders)) },
+            onRemove = onRemoveRootFolder,
+            onSetCover = rootFolder?.let { _ -> {
+                pickCoverLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            } }
+        )
+        Spacer(modifier = Modifier.height(6.dp))
 
-        if (inaccessibleFolders.isNotEmpty() && browsePath == null) {
-            Text(
-                text = "⚠️ Недоступно папок: ${inaccessibleFolders.size}",
-                fontSize = 13.sp,
-                color = RedButton,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-        }
-
-        if (watchedFolders.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                contentAlignment = Alignment.Center
+        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            LazyColumn(
+                state = videoListState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(
-                    text = "Нажмите, чтобы добавить папки",
-                    color = FolderBlue,
-                    fontSize = 18.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable { onRequestAddFolders() }.padding(16.dp)
-                )
-            }
-        } else {
-            if (browsePath != null) {
-                FolderBrowseBar(
-                    currentPath = browsePath,
-                    onNavigateUp = {
-                        onBrowsePathChange(parentBrowsePath(browsePath, watchedFolders))
-                    }
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-            }
-
-            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                LazyColumn(
-                    state = videoListState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    if (browsePath == null) {
-                        items(
-                            items = watchedFolders.sorted(),
-                            key = { it }
-                        ) { folderPath ->
-                            RootFolderRow(
-                                folderName = abbreviateFolderPath(folderPath),
-                                videoCount = videoCountForFolder(allVideos, folderPath),
-                                onEnter = { onBrowsePathChange(folderPath) },
-                                onRemove = { onRemoveFolder(folderPath) }
-                            )
-                        }
-                    } else {
-                        if (loadingSubdirs) {
-                            item(key = "loading") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    AndroidView(
-                                        factory = { ctx ->
-                                            android.widget.ProgressBar(ctx).apply {
-                                                indeterminateTintList =
-                                                    android.content.res.ColorStateList.valueOf(0xFFFF9800.toInt())
-                                            }
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    )
+            if (loadingSubdirs) {
+                item(key = "loading") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AndroidView(
+                            factory = { ctx ->
+                                android.widget.ProgressBar(ctx).apply {
+                                    indeterminateTintList =
+                                        android.content.res.ColorStateList.valueOf(0xFFFF9800.toInt())
                                 }
-                            }
-                        }
-
-                        items(
-                            items = subdirectories,
-                            key = { it }
-                        ) { subdirPath ->
-                            SubfolderRow(
-                                folderName = File(subdirPath).name,
-                                onEnter = { onBrowsePathChange(subdirPath) }
-                            )
-                        }
-
-                        val videosHere = videosByParentPath[browsePath].orEmpty()
-                            .sortedBy { it.fileName.lowercase() }
-
-                        items(
-                            items = videosHere,
-                            key = { it.filePath }
-                        ) { video ->
-                            VideoListItem(
-                                fileName = video.fileName,
-                                onClick = {
-                                    onPlayVideo(video.filePath)
-                                }
-                            )
-                        }
-
-                        if (!loadingSubdirs && subdirectories.isEmpty() && videosHere.isEmpty()) {
-                            item(key = "empty") {
-                                Text(
-                                    text = "Папка пуста",
-                                    color = Color.White.copy(alpha = 0.4f),
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.padding(16.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    if (browsePath == null && unsupportedFiles.isNotEmpty()) {
-                        item(key = "unsupported-toggle") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            TextButton(onClick = onToggleUnsupported) {
-                                Text(
-                                    text = if (showUnsupported) {
-                                        "Скрыть неподдерживаемые (${unsupportedFiles.size})"
-                                    } else {
-                                        "Неподдерживаемые (${unsupportedFiles.size})"
-                                    },
-                                    color = Color.White.copy(alpha = 0.5f),
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-                        if (showUnsupported) {
-                            items(
-                                items = unsupportedFiles,
-                                key = { it }
-                            ) { path ->
-                                Text(
-                                    text = "⚠️ ${path.substringAfterLast('/')}",
-                                    fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = 0.4f),
-                                    modifier = Modifier.padding(start = 16.dp, bottom = 2.dp),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                            },
+                            modifier = Modifier.size(32.dp)
+                        )
                     }
                 }
-                VerticalScrollbar(state = videoListState)
+            }
+
+            items(
+                items = subdirectories,
+                key = { it }
+            ) { subdirPath ->
+                SubfolderRow(
+                    folderName = File(subdirPath).name,
+                    onEnter = { onBrowsePathChange(subdirPath) }
+                )
+            }
+
+            val videosHere = videosByParentPath[browsePath].orEmpty()
+                .sortedBy { it.fileName.lowercase() }
+
+            items(
+                items = videosHere,
+                key = { it.filePath }
+            ) { video ->
+                VideoListItem(fileName = video.fileName)
+            }
+
+            if (!loadingSubdirs && subdirectories.isEmpty() && videosHere.isEmpty()) {
+                item(key = "empty") {
+                    Text(
+                        text = "Папка пуста",
+                        color = Color.White.copy(alpha = 0.4f),
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+
+            // The unsupported list belongs to the root level only; when the
+            // user browses a root folder directly it stays visible at the end.
+            if (rootFolder == browsePath && libraryState.unsupportedFiles.isNotEmpty()) {
+                item(key = "unsupported-toggle") {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(onClick = onToggleUnsupported) {
+                        Text(
+                            text = if (showUnsupported) {
+                                "Скрыть неподдерживаемые (${libraryState.unsupportedFiles.size})"
+                            } else {
+                                "Неподдерживаемые (${libraryState.unsupportedFiles.size})"
+                            },
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+                if (showUnsupported) {
+                    items(
+                        items = libraryState.unsupportedFiles,
+                        key = { it }
+                    ) { path ->
+                        Text(
+                            text = "⚠️ ${path.substringAfterLast('/')}",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.4f),
+                            modifier = Modifier.padding(start = 16.dp, bottom = 2.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+            }
+            VerticalScrollbar(
+                state = videoListState,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyLibraryPlaceholder(
+    onRequestAddFolders: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.clickable(onClick = onRequestAddFolders).padding(32.dp)
+        ) {
+            Text(text = "📂", fontSize = 56.sp)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Добавить папки с мультфильмами",
+                color = FolderBlue,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Выберите папки с видео — библиотека соберётся автоматически",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScanStatusBadge(
+    libraryState: LibraryState,
+    onRefresh: () -> Unit
+) {
+    val timeText = libraryState.lastScanTime?.let { ts ->
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = when {
+                libraryState.isScanning -> "Обновление..."
+                timeText != null -> "Обновлено: $timeText"
+                else -> "Библиотека не сканировалась"
+            },
+            fontSize = 13.sp,
+            color = Color.White.copy(alpha = 0.5f)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        TextButton(onClick = onRefresh, enabled = !libraryState.isScanning) {
+            Text("Обновить", color = FolderBlue, fontSize = 13.sp)
+        }
+    }
+}
+@Composable
+private fun DashboardActionButtons(
+    folderCount: Int,
+    onBackToKidMode: () -> Unit,
+    onNavigateToPlayback: () -> Unit,
+    onAddFolders: () -> Unit,
+    onNavigateToSettings: () -> Unit,
+    onExit: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ParentActionButton("Назад", onBackToKidMode, Modifier.weight(1f))
+        ParentActionButton(
+            "Смотреть",
+            onNavigateToPlayback,
+            Modifier.weight(1f),
+            accent = true,
+            enabled = folderCount > 0
+        )
+        ParentActionButton("Добавить", onAddFolders, Modifier.weight(1f))
+        ParentActionButton("Настройки", onNavigateToSettings, Modifier.weight(1f))
+        ParentActionButton("Выход", onExit, Modifier.weight(1f), destructive = true)
+    }
+}
+
+/**
+ * Strict, adult control-panel button for the parent dashboard: flat dark
+ * surface, no bounce animation, single accent (blue) and red text reserved
+ * for destructive actions.
+ */
+@Composable
+private fun ParentActionButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Boolean = false,
+    destructive: Boolean = false,
+    enabled: Boolean = true
+) {
+    val contentColor = when {
+        !enabled -> Color.White.copy(alpha = 0.35f)
+        destructive -> RedButton
+        accent -> Color.White
+        else -> Color.White.copy(alpha = 0.85f)
+    }
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(10.dp),
+        color = if (accent && enabled) FolderBlue else CardSurface,
+        modifier = modifier.height(BUTTON_HEIGHT)
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = text,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = contentColor,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+    }
+}
+
+@Composable
+private fun BrowseBarRow(
+    currentPath: String,
+    rootFolder: String?,
+    onNavigateUp: () -> Unit,
+    onRemove: (String) -> Unit,
+    onSetCover: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FolderBrowseBar(
+            currentPath = currentPath,
+            onNavigateUp = onNavigateUp,
+            modifier = Modifier.weight(1f)
+        )
+        if (onSetCover != null) {
+            Surface(
+                onClick = onSetCover,
+                shape = RoundedCornerShape(12.dp),
+                color = CardSurface
+            ) {
+                Text(
+                    text = "🖼 Обложка",
+                    fontSize = 12.sp,
+                    color = FolderBlue,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
+                )
+            }
+        }
+        if (rootFolder != null) {
+            Surface(
+                onClick = { onRemove(rootFolder) },
+                shape = RoundedCornerShape(12.dp),
+                color = RedButton.copy(alpha = 0.2f)
+            ) {
+                Text(
+                    text = "Убрать из библиотеки",
+                    fontSize = 12.sp,
+                    color = RedButton,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
+                )
             }
         }
     }
@@ -660,12 +616,14 @@ private fun DashboardVideoList(
 @Composable
 private fun FolderBrowseBar(
     currentPath: String,
-    onNavigateUp: () -> Unit
+    onNavigateUp: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
         onClick = onNavigateUp,
-        shape = RoundedCornerShape(8.dp),
-        color = CardSurface
+        shape = RoundedCornerShape(12.dp),
+        color = CardSurface,
+        modifier = modifier
     ) {
         Row(
             modifier = Modifier
@@ -687,67 +645,11 @@ private fun FolderBrowseBar(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-        }
-    }
-}
-
-@Composable
-private fun RootFolderRow(
-    folderName: String,
-    videoCount: Int,
-    onEnter: () -> Unit,
-    onRemove: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = CardSurface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onEnter)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = FOLDER_ROW_HORIZONTAL_PADDING,
-                    vertical = FOLDER_ROW_VERTICAL_PADDING
-                ),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = "📁", fontSize = FOLDER_ROW_ICON_SIZE)
-            Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = folderName,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = FolderBlue,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
+                text = "↰",
+                fontSize = 18.sp,
+                color = FolderBlue
             )
-            Text(
-                text = "$videoCount",
-                fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.5f),
-                modifier = Modifier.padding(end = 8.dp)
-            )
-            Box(
-                modifier = Modifier.size(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    onClick = onRemove,
-                    shape = RoundedCornerShape(8.dp),
-                    color = RedButton.copy(alpha = 0.2f)
-                ) {
-                    Text(
-                        text = "✕",
-                        fontSize = 14.sp,
-                        color = RedButton,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
-                }
-            }
         }
     }
 }
@@ -758,7 +660,7 @@ private fun SubfolderRow(
     onEnter: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(12.dp),
         color = CardSurface,
         modifier = Modifier
             .fillMaxWidth()
@@ -793,17 +695,15 @@ private fun SubfolderRow(
     }
 }
 
+/**
+ * Informational row in the management browse view — no play affordance.
+ */
 @Composable
-private fun VideoListItem(
-    fileName: String,
-    onClick: () -> Unit
-) {
+private fun VideoListItem(fileName: String) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(12.dp),
         color = CardSurface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
@@ -817,7 +717,7 @@ private fun VideoListItem(
                 text = fileName,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.White,
+                color = Color.White.copy(alpha = 0.85f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

@@ -9,6 +9,8 @@ import com.dima.bbvideoplayer.AppState
 import com.dima.bbvideoplayer.ui.screens.FilePickerScreen
 import com.dima.bbvideoplayer.ui.screens.KidPlayerScreen
 import com.dima.bbvideoplayer.ui.screens.ParentDashboardScreen
+import com.dima.bbvideoplayer.ui.screens.ParentSettingsScreen
+import com.dima.bbvideoplayer.ui.screens.PlaybackPickerScreen
 import kotlinx.coroutines.delay
 
 /**
@@ -17,6 +19,8 @@ import kotlinx.coroutines.delay
 object Routes {
     const val KID_PLAYER = "kid_player"
     const val PARENT_DASHBOARD = "parent_dashboard"
+    const val PARENT_PLAYBACK = "parent_playback"
+    const val PARENT_SETTINGS = "parent_settings"
     const val FILE_PICKER = "file_picker"
 }
 
@@ -88,11 +92,34 @@ fun AppNavHost(
                 onNavigateToFilePicker = {
                     navController.navigate(Routes.FILE_PICKER)
                 },
+                onNavigateToPlayback = {
+                    navController.navigate(Routes.PARENT_PLAYBACK)
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Routes.PARENT_SETTINGS)
+                },
+                onExit = { appState.suspendKiosk() }
+            )
+        }
+
+        composable(Routes.PARENT_PLAYBACK) {
+            PlaybackPickerScreen(
+                videoRepository = appState.videoRepository,
+                videoLibraryService = appState.videoLibraryService,
+                onBack = { navController.popBackStack() },
                 onPlayVideo = { index ->
                     appState.pendingStartVideoIndex = index
                     navController.popBackStack(Routes.KID_PLAYER, inclusive = false)
-                },
-                onExit = { appState.suspendKiosk() }
+                }
+            )
+        }
+
+        composable(Routes.PARENT_SETTINGS) {
+            ParentSettingsScreen(
+                videoRepository = appState.videoRepository,
+                onBack = { navController.popBackStack() },
+                showControlsSideSetting = true,
+                showPinControls = true
             )
         }
 
